@@ -1,69 +1,65 @@
-# websocket extracttion with GCE
-
-## 1. Docker build image
-
 ```bash
-# build docker image
-docker build -t py-gce gce_websocket/
+# venv
+python3 -m venv venv
+source venv/bin/activate
 
-docker images
-IMAGE_NAME=py-gce
+# Install dependencies
+pip install flask
+pip install kafka-python
+pip install websocket-client
+pip install google-cloud-pubsub
 
-# run locally
-docker run py-gce
-```
+pip freeze > websocket_app/requirements.txt
 
-## 2. Push to GCP Artifact Registry
+# Run the app and redirect logs to a file
+cd websocket_app
+flask run
 
-### 2.2. GCP configuration
-
-```bash
-PROJECT_ID=$(gcloud config get-value project)
-echo ---- project: $PROJECT_ID
-
+# gcloud config
+PROJECT_ID="cryptos-gcp"
 REGION=europe-west9
-
 SERVICE_ACCOUNT_EMAIL=$(gcloud iam service-accounts list --filter="displayName:cryptos-gcp-sa" --format='value(email)')
 echo ---- SA:$SERVICE_ACCOUNT_EMAIL
 
+# get json key
+gcloud iam service-accounts keys create keys/key-gcloud.json --iam-account=$SERVICE_ACCOUNT_EMAIL
+
+# === Pub/Sub ===
+
+# Enable Pub/Sub API
+gcloud services enable pubsub.googleapis.com
+
+# IAM permissions
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role roles/pubsub.admin
+
+TOPIC_NAME="cryptos-streaming"
+
+# Create a Pub/Sub topic
+gcloud pubsub topics create $TOPIC_NAME 
+# List Pub/Sub topics
+gcloud pubsub topics list
+# Delete a Pub/Sub topic
+gcloud pubsub topics delete $TOPIC_NAME
+
+# List subscriptions
+gcloud pubsub subscriptions list
+# Create a subscription
+gcloud pubsub subscriptions create $TOPIC_NAME-sub --topic $TOPIC_NAME
+# Delete a subscription
+gcloud pubsub subscriptions delete $TOPIC_NAME-sub
+
+TOPIC_NAME="allo_topic"
+# display messages
+gcloud pubsub subscriptions pull $TOPIC_NAME-sub --auto-ack --limit=100
+
+
+# === Dockerize app ======
+
+# Build the image
+docker build -t websocket_to_kafka .
+
+# Run the container
+docker run -p 5000:5000 websocket_to_kafka
 ```
-
-### 2.3. Push to GCP Artifact Registry
-
-```bash
-APP_LOCAL_FOLDER=gce_websocket
-ARTIFACT_REGISTRY_REPO_NAME=ws-gce-yzpt
-ARTIFACT_REGISTRY_LOCATION=europe-west9
-IMAGE_NAME=py-gce
-
-# Set Artifact Registry administrator permissions for the service account
-gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" --role="roles/artifactregistry.writer"
-
-# Create a repository on Artifact Registry
-gcloud artifacts repositories create $ARTIFACT_REGISTRY_REPO_NAME --repository-format=docker --location=$ARTIFACT_REGISTRY_LOCATION --description="py-websocket container on GCE"
-
-# Docker/GCP Authentication
-gcloud auth configure-docker $ARTIFACT_REGISTRY_LOCATION-docker.pkg.dev --quiet
-
-# tag the local docker image
-docker tag $IMAGE_NAME $ARTIFACT_REGISTRY_LOCATION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REGISTRY_REPO_NAME/$IMAGE_NAME
-
-# Push Docker to GCP Artifact Registry
-docker push $ARTIFACT_REGISTRY_LOCATION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REGISTRY_REPO_NAME/$IMAGE_NAME
-echo $ARTIFACT_REGISTRY_LOCATION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REGISTRY_REPO_NAME/$IMAGE_NAME
-```
-
-### 2.4. Deploy to GCE
-
-```bash
-# Create a GCE instance
-
-
-
-
-
-
-
-
-
-
